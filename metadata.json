@@ -1,0 +1,5 @@
+{
+  "name": "Flower Asset Hub & Onboarding Agent",
+  "description": "A prototype to simplify and automate workflow creation for developers by providing a centralized hub for discovering and reusing stages, workflows, and other assets with the help of an AI agent.",
+  "requestFramePermissions": []
+}
