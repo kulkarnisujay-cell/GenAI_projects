@@ -13,12 +13,12 @@ const getAI = () => {
   return ai;
 };
 
-export const startChat = (): Chat => {
+export const startChat = (systemInstruction: string): Chat => {
   const aiInstance = getAI();
   chat = aiInstance.chats.create({
     model: 'gemini-2.5-flash',
     config: {
-      systemInstruction: `You are the Jarvis Onboarding Agent, an expert AI assistant that helps developers create new workflows for the Flower platform. Your primary function is to take a structured set of specifications for a workflow and generate a complete, valid C++ workflow definition in JCL format. The user will provide all necessary details, including selected stages, dependencies, and connections. When asked to generate, your primary output should be the complete C++ code within a single \`\`\`cpp ... \`\`\` block. You can provide a brief confirmation before the code, like "Certainly, here is the generated workflow:". The code should be a plausible example of a JCL workflow definition based on the inputs.`
+      systemInstruction,
     }
   });
   return chat;
@@ -26,7 +26,7 @@ export const startChat = (): Chat => {
 
 export const sendMessageStream = async (message: string) => {
   if (!chat) {
-    chat = startChat();
+    throw new Error("Chat not initialized. Call startChat first.");
   }
   return chat.sendMessageStream({ message });
 };

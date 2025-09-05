@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Asset, ChatMessage } from '../types';
 import { sendMessageStream, startChat } from '../services/geminiService';
 import { SendIcon } from './icons/SendIcon';
+import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
+
+const CODE_GENERATION_PROMPT = `You are the Jarvis Onboarding Agent, an expert AI assistant that helps developers create new workflows for the Flower platform. Your primary function is to take a structured set of specifications for a workflow and generate a complete, valid C++ workflow definition in JCL format. The user will provide all necessary details, including selected stages, dependencies, and connections. When asked to generate, your primary output should be the complete C++ code within a single \`\`\`cpp ... \`\`\` block. You can provide a brief confirmation before the code, like "Certainly, here is the generated workflow:". The code should be a plausible example of a JCL workflow definition based on the inputs.`;
 
 // Form data structure
 interface WorkflowFormData {
@@ -18,10 +21,11 @@ interface WorkflowFormData {
 interface WorkflowWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onBack: () => void;
   selectedAssets: Asset[];
 }
 
-const WorkflowWizardModal: React.FC<WorkflowWizardModalProps> = ({ isOpen, onClose, selectedAssets }) => {
+const WorkflowWizardModal: React.FC<WorkflowWizardModalProps> = ({ isOpen, onClose, onBack, selectedAssets }) => {
   const [formData, setFormData] = useState<WorkflowFormData>({
     workflowType: 'Fleet',
     description: '',
@@ -40,7 +44,7 @@ const WorkflowWizardModal: React.FC<WorkflowWizardModalProps> = ({ isOpen, onClo
   useEffect(() => {
     // Initialize chat when modal opens
     if (isOpen) {
-      startChat(); // Re-initialize chat session
+      startChat(CODE_GENERATION_PROMPT); // Use the specific code generation prompt
       const assetNames = selectedAssets.map(a => `\`${a.name}\``).join(', ');
       setMessages([
         { id: '1', sender: 'agent', text: `Hello! Let's create a new workflow. I see you've selected: ${assetNames}.` },
@@ -145,10 +149,16 @@ const WorkflowWizardModal: React.FC<WorkflowWizardModalProps> = ({ isOpen, onClo
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
-        <header className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-xl font-bold">New Workflow Creation Agent</h2>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        <header className="relative flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-4">
+              <button onClick={onBack} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                  <ArrowLeftIcon className="h-5 w-5" />
+                  <span>Back to Hub</span>
+              </button>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-800 absolute left-1/2 -translate-x-1/2">New Workflow Creation Agent</h2>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 z-10">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </header>
 

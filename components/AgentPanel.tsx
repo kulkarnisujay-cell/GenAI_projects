@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Asset, ChatMessage } from '../types';
 import { sendMessageStream, startChat } from '../services/geminiService';
 import { PlusIcon } from './icons/PlusIcon';
 import { SendIcon } from './icons/SendIcon';
-import { GenerateContentResponse } from '@google/genai';
+
+const GENERAL_ASSISTANT_PROMPT = `You are a helpful AI assistant for the Flower Asset Hub, a marketplace for discovering and reusing software development stages and workflows. Your role is to help developers find relevant assets and understand how to use them. You can answer questions like "find me stages for CI/CD" or "what are the inputs for the SUBMIT_CHANGELIST stage?". You have knowledge about these assets: CODEMAKER, SUBMIT_CHANGELIST, UPDATE_DESCRIPTION, SYNC_GREEN_CL, CREATE_BUGANIZER_ISSUE, STANDARD_RELEASE_PIPELINE, RUN_UNIT_TESTS, DEPLOY_TO_STAGING. Respond conversationally based on the user's query.`;
 
 interface AgentPanelProps {
   selectedAssets: Asset[];
@@ -26,11 +26,11 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelectio
   }, [messages]);
   
   const initChat = useCallback(() => {
-    startChat();
+    startChat(GENERAL_ASSISTANT_PROMPT);
     const initialAgentMessage: ChatMessage = {
       id: Date.now().toString(),
       sender: 'agent',
-      text: 'Hello, Jane! How can I help you today? Select one or more assets and tell me what you want to build.',
+      text: 'Hello, Jane! How can I help you today? Ask me to find a stage, or select assets to create a workflow.',
     };
     setMessages([initialAgentMessage]);
     hasStartedChat.current = true;
@@ -41,18 +41,6 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelectio
         initChat();
     }
   }, [initChat]);
-
-  useEffect(() => {
-    if (selectedAssets.length > 0) {
-      const selectedAssetNames = selectedAssets.map(a => `\`${a.name}\``).join(', ');
-      const message: ChatMessage = {
-        id: `selection-${Date.now()}`,
-        sender: 'agent',
-        text: `You have selected: ${selectedAssetNames}. What would you like to do with them?`,
-      };
-      setMessages(prev => [...prev, message]);
-    }
-  }, [selectedAssets]);
 
   const handleSendMessage = async () => {
     if (!userInput.trim() || isLoading) return;
@@ -76,13 +64,10 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelectio
     setMessages(prev => [...prev, agentTypingMessage]);
 
     try {
-      // FIX: The `sendMessageStream` function expects a single string argument.
-      // A new prompt is constructed here to include the context of selected assets
-      // along with the user's input.
       let prompt = userInput;
       if (selectedAssets.length > 0) {
         const assetNames = selectedAssets.map(a => a.name).join(', ');
-        prompt = `Using assets: ${assetNames}. \n\n${userInput}`;
+        prompt = `The user has these assets selected: ${assetNames}. \n\nUser's question: ${userInput}`;
       }
       const stream = await sendMessageStream(prompt);
       let fullText = '';
@@ -107,23 +92,11 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelectio
       setMessages(prev => prev.map(msg => msg.id === agentResponseId ? errorMessage : msg));
     } finally {
       setIsLoading(false);
-      onClearSelection();
+      // Do not clear selection on every message anymore
+      // onClearSelection(); 
     }
   };
   
-  const handleSuggestionClick = (suggestion: string) => {
-    if (selectedAssets.length === 0) {
-        const warningMessage: ChatMessage = {
-            id: Date.now().toString(),
-            sender: 'agent',
-            text: "Please select at least one asset from the marketplace first.",
-        };
-        setMessages(prev => [...prev, warningMessage]);
-        return;
-    }
-    setUserInput(suggestion);
-  }
-
   return (
     <aside className="w-full max-w-sm flex-shrink-0 border-l bg-white flex flex-col">
       <div className="flex h-16 items-center justify-between border-b px-4">
@@ -155,12 +128,6 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelectio
       </div>
 
       <div className="border-t p-4">
-         {selectedAssets.length > 0 && messages.filter(m => m.sender === 'user').length === 0 && (
-             <div className="grid grid-cols-2 gap-2 mb-2 text-sm">
-                 <button onClick={() => handleSuggestionClick("Create a workflow to submit a changelist after code generation.")} className="p-2 bg-gray-100 rounded-md text-left hover:bg-gray-200">Create a workflow to submit a changelist...</button>
-                 <button onClick={() => handleSuggestionClick("Generate code, then create a Buganizer issue if it fails.")} className="p-2 bg-gray-100 rounded-md text-left hover:bg-gray-200">Generate code, then create a Buganizer issue...</button>
-             </div>
-         )}
         <div className="relative">
           <textarea
             value={userInput}

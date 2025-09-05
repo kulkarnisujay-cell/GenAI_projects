@@ -5,7 +5,6 @@ import { SearchIcon } from './icons/SearchIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { GridIcon } from './icons/GridIcon';
 import { TableIcon } from './icons/TableIcon';
-import { ArrowRightIcon } from './icons/ArrowRightIcon';
 
 const mockAssets: Asset[] = [
   { id: '1', name: 'CODEMAKER', description: 'Generates code based on specifications. Highly reusable for various build processes.', type: 'stage', isNew: true, category: 'Build', owner: 'jarvis-team' },
@@ -18,33 +17,12 @@ const mockAssets: Asset[] = [
   { id: '8', name: 'DEPLOY_TO_STAGING', description: 'Deploys a build to the staging environment.', type: 'stage', category: 'Release', owner: 'sre-team' },
 ];
 
-const CreateWorkflowBanner: React.FC<{ count: number; onOpen: () => void }> = ({ count, onOpen }) => {
-  if (count === 0) return null;
-
-  return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-auto animate-fade-in-up">
-      <div className="bg-blue-600 text-white rounded-lg shadow-2xl flex items-center justify-between py-3 px-5 gap-6">
-        <span className="font-medium">{count} asset{count > 1 ? 's' : ''} selected</span>
-        <button 
-          onClick={onOpen}
-          className="bg-white text-blue-600 font-semibold px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center gap-2"
-        >
-          <span>Create Workflow with Agent</span>
-          <ArrowRightIcon className="h-5 w-5" />
-        </button>
-      </div>
-    </div>
-  );
-};
-
-
 interface AssetHubProps {
   selectedAssets: Asset[];
   onAssetSelect: (asset: Asset, isSelected: boolean) => void;
-  onOpenWizard: () => void;
 }
 
-const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, onOpenWizard }) => {
+const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredAssets = mockAssets.filter(asset =>
@@ -56,10 +34,10 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, onOp
   const mostPopularAssets = filteredAssets.filter(a => !a.isNew);
 
   return (
-    <div className="relative flex-1 flex flex-col p-6 overflow-y-auto bg-gray-50">
+    <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-gray-50">
       <div className="flex-shrink-0">
         <h2 className="text-2xl font-bold">Stage Marketplace</h2>
-        <p className="text-gray-500 mt-1">Select one or more assets below to begin building your workflow.</p>
+        <p className="text-gray-500 mt-1">Select one or more assets below to begin building your workflow, or ask the agent for help.</p>
       </div>
 
       <div className="flex items-center space-x-2 mt-6 flex-shrink-0">
@@ -86,7 +64,7 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, onOp
       <div className="mt-8 flex-grow pb-24">
         <div>
           <h3 className="text-lg font-semibold">Recently updated</h3>
-          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
             {recentlyUpdatedAssets.map(asset => (
               <AssetCard
                 key={asset.id}
@@ -99,7 +77,7 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, onOp
         </div>
         <div className="mt-8">
           <h3 className="text-lg font-semibold">Most popular</h3>
-           <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+           <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
             {mostPopularAssets.map(asset => (
               <AssetCard
                 key={asset.id}
@@ -111,7 +89,6 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, onOp
           </div>
         </div>
       </div>
-       <CreateWorkflowBanner count={selectedAssets.length} onOpen={onOpenWizard} />
     </div>
   );
 };
