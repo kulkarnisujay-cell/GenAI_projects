@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Asset, WizardFormData, WizardStage, PublicIO, Connection } from '../types';
-import { startChat, sendMessageStream } from '../services/geminiService';
-import { Chat } from '@google/genai';
+import { Asset, WizardFormData, WizardStage } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
-import { TrashIcon } from './icons/TrashIcon';
+import { ArrowRightIcon } from './icons/ArrowRightIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 
 interface WorkflowWizardModalProps {
@@ -12,361 +10,188 @@ interface WorkflowWizardModalProps {
   selectedAssets: Asset[];
 }
 
-const initialFormData: WizardFormData = {
+const STEPS = ['Configuration', 'Stages', 'Inputs & Outputs', 'Connections', 'Review'];
+
+const initialFormData: Omit<WizardFormData, 'stages'> = {
   workflowConfig: {
     workflowType: '',
     fleet: 'NON_PROD',
     directory: '',
     description: '',
   },
-  stages: [],
   publicInputs: [],
   publicOutputs: [],
   connections: [],
 };
 
 const WorkflowWizardModal: React.FC<WorkflowWizardModalProps> = ({ isOpen, onClose, selectedAssets }) => {
-  const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState<WizardFormData>(initialFormData);
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [chat, setChat] = useState<Chat | null>(null);
-
-  useEffect(() => {
-      if(isOpen) {
-        // Reset form when modal opens, and initialize stages from selection
-        const initialStages: WizardStage[] = selectedAssets.map(asset => ({
-            id: crypto.randomUUID(),
-            name: asset.name,
-            stageName: ''
-        }));
-        const newFormData = {...initialFormData, stages: initialStages};
-        setFormData(newFormData);
-        setStep(1);
-        setGeneratedCode('');
-
-        const newChat = startChat(
-            "You are an expert in JCL (Jarvis Configuration Language). Your task is to generate C++ workflow code in JCL format based on the JSON configuration provided by the user. Do not add any explanations or markdown formatting. Respond only with the raw JCL code."
-        );
-        setChat(newChat);
-      }
-  }, [isOpen, selectedAssets]);
-
-  const handleNext = () => setStep(s => Math.min(s + 1, 7));
-  const handleBack = () => setStep(s => Math.max(s - 1, 1));
-
-  const updateFormData = <K extends keyof WizardFormData>(key: K, value: WizardFormData[K]) => {
-    setFormData(prev => ({...prev, [key]: value}));
-  };
-
-  const handleAddStage = () => {
-    updateFormData('stages', [...formData.stages, { id: crypto.randomUUID(), name: '', stageName: '' }]);
-  }
-  const handleRemoveStage = (id: string) => {
-    updateFormData('stages', formData.stages.filter(s => s.id !== id));
-  }
+  const [currentStep, setCurrentStep] = useState(0);
+  const [formData, setFormData] = useState<WizardFormData>({
+    ...initialFormData,
+    stages: []
+  });
   
-  const handleAddPublicInput = () => {
-    updateFormData('publicInputs', [...formData.publicInputs, { id: crypto.randomUUID(), name: '', type: 'String', description: '' }]);
-  }
-  const handleRemovePublicInput = (id: string) => {
-    updateFormData('publicInputs', formData.publicInputs.filter(i => i.id !== id));
-  }
-
-  const handleAddPublicOutput = () => {
-    updateFormData('publicOutputs', [...formData.publicOutputs, { id: crypto.randomUUID(), name: '', type: 'String', description: '' }]);
-  }
-  const handleRemovePublicOutput = (id: string) => {
-    updateFormData('publicOutputs', formData.publicOutputs.filter(o => o.id !== id));
-  }
-
-  const handleAddConnection = () => {
-    updateFormData('connections', [...formData.connections, { id: crypto.randomUUID(), sourceType: 'Public Input', source: '', sourceField: '', destinationType: 'Stage Input Field', destination: '', destinationField: '' }]);
-  }
-  const handleRemoveConnection = (id: string) => {
-    updateFormData('connections', formData.connections.filter(c => c.id !== id));
-  }
-
-  const handleGenerateCode = async () => {
-    if (!chat) return;
-    setIsGenerating(true);
-    setGeneratedCode('');
-    const prompt = JSON.stringify(formData, null, 2);
-    
-    try {
-        const stream = await sendMessageStream(chat, prompt);
-        let response = '';
-        for await (const chunk of stream) {
-            response += chunk.text;
-            setGeneratedCode(response);
-        }
-    } catch (error) {
-        console.error("Generation Error:", error);
-        setGeneratedCode("Sorry, an error occurred while generating the code.");
-    } finally {
-        setIsGenerating(false);
+  useEffect(() => {
+    if (isOpen) {
+      const initialStages: WizardStage[] = selectedAssets
+        .filter(asset => asset.type === 'stage')
+        .map(asset => ({
+          id: `${asset.id}-${Math.random()}`, // Using Math.random for simplicity as no uuid library is available
+          name: asset.name,
+          stageName: asset.name,
+        }));
+      setFormData({
+        ...initialFormData,
+        stages: initialStages
+      });
+      setCurrentStep(0);
     }
-  }
-
+  }, [isOpen, selectedAssets]);
+  
   if (!isOpen) return null;
 
-  const renderStep = () => {
-    // Mock data for dropdowns
-    const stageFields = ['citc_workspace_name', 'change_id', 'patch_cl'];
-    
-    switch(step) {
-      case 1: // Workflow Configuration
+  const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+  const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 0));
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    const [section, field] = name.split('.');
+
+    if (section === 'workflowConfig') {
+        setFormData(prev => ({
+            ...prev,
+            workflowConfig: {
+                ...prev.workflowConfig,
+                [field]: value
+            }
+        }));
+    }
+  };
+
+  const handleStageNameChange = (index: number, newName: string) => {
+    const newStages = [...formData.stages];
+    newStages[index].stageName = newName;
+    setFormData(prev => ({ ...prev, stages: newStages }));
+  };
+
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 0: // Configuration
         return (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-gray-700">Workflow Type</label>
-                <input type="text" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" value={formData.workflowConfig.workflowType} onChange={e => updateFormData('workflowConfig', {...formData.workflowConfig, workflowType: e.target.value})} />
+          <div>
+            <h3 className="text-xl font-semibold mb-6">Workflow Configuration</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Workflow Type Name</label>
+                <input type="text" name="workflowConfig.workflowType" value={formData.workflowConfig.workflowType} onChange={handleFormChange} placeholder="e.g., MyAwesomeWorkflow" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
               </div>
-              <div className="md:col-span-1">
+              <div>
                 <label className="block text-sm font-medium text-gray-700">Fleet</label>
-                <select className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" value={formData.workflowConfig.fleet} onChange={e => updateFormData('workflowConfig', {...formData.workflowConfig, fleet: e.target.value as any})}>
-                    <option>NON_PROD</option>
-                    <option>PROD</option>
-                    <option>TESTING</option>
+                <select name="workflowConfig.fleet" value={formData.workflowConfig.fleet} onChange={handleFormChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                  <option value="NON_PROD">NON_PROD</option>
+                  <option value="PROD">PROD</option>
+                  <option value="TESTING">TESTING</option>
                 </select>
               </div>
-              <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-gray-700">Directory for Workflow Code</label>
-                <input type="text" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" value={formData.workflowConfig.directory} onChange={e => updateFormData('workflowConfig', {...formData.workflowConfig, directory: e.target.value})} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Directory</label>
+                <input type="text" name="workflowConfig.directory" value={formData.workflowConfig.directory} onChange={handleFormChange} placeholder="/path/to/workflow" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Workflow Description</label>
-              <textarea rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" value={formData.workflowConfig.description} onChange={e => updateFormData('workflowConfig', {...formData.workflowConfig, description: e.target.value})} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea name="workflowConfig.description" value={formData.workflowConfig.description} onChange={handleFormChange} rows={3} placeholder="A brief description of what this workflow does." className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
+              </div>
             </div>
           </div>
         );
-      case 2: // Add Stages
+      case 1: // Stages
         return (
+          <div>
+            <h3 className="text-xl font-semibold mb-6">Stages</h3>
+            <p className="text-sm text-gray-500 mb-4">The following stages were added from your selection. You can rename them for this workflow instance.</p>
             <div className="space-y-4">
-                {formData.stages.map((stage, index) => (
-                    <div key={stage.id} className="flex items-center gap-4 p-3 border rounded-lg bg-gray-50">
-                        <input type="text" placeholder="Stage Type" className="flex-1 block w-full rounded-md border-gray-300 shadow-sm" value={stage.name} onChange={e => {
-                            const newStages = [...formData.stages];
-                            newStages[index].name = e.target.value;
-                            updateFormData('stages', newStages);
-                        }} />
-                        <input type="text" placeholder="Stage Name (optional)" className="flex-1 block w-full rounded-md border-gray-300 shadow-sm" value={stage.stageName} onChange={e => {
-                             const newStages = [...formData.stages];
-                             newStages[index].stageName = e.target.value;
-                             updateFormData('stages', newStages);
-                        }} />
-                        <button onClick={() => handleRemoveStage(stage.id)} className="text-red-500 hover:text-red-700 p-2"><TrashIcon className="w-5 h-5"/></button>
-                    </div>
-                ))}
-                <button onClick={handleAddStage} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">+ Add Stage</button>
+              {formData.stages.length > 0 ? formData.stages.map((stage, index) => (
+                <div key={stage.id} className="flex items-center gap-4 p-3 border rounded-md bg-gray-50">
+                  <span className="font-mono text-sm bg-gray-200 py-1 px-2 rounded">{stage.name}</span>
+                  <input
+                    type="text"
+                    value={stage.stageName}
+                    onChange={(e) => handleStageNameChange(index, e.target.value)}
+                    className="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+              )) : (
+                <p className="text-gray-500">No stages selected. Please go back and select some stage assets.</p>
+              )}
             </div>
+          </div>
         );
-       case 3: // Add Public Inputs
-            return (
-                <div className="space-y-4">
-                    {formData.publicInputs.map((input, index) => (
-                        <div key={input.id} className="p-3 border rounded-lg bg-gray-50 flex items-start gap-4">
-                            <div className="flex-1 space-y-2">
-                                <div className="flex gap-4">
-                                    <input type="text" placeholder="Input Name" className="block w-full rounded-md border-gray-300 shadow-sm" value={input.name} onChange={e => {
-                                        const newInputs = [...formData.publicInputs];
-                                        newInputs[index].name = e.target.value;
-                                        updateFormData('publicInputs', newInputs);
-                                    }}/>
-                                    <select className="block w-1/3 rounded-md border-gray-300 shadow-sm" value={input.type} onChange={e => {
-                                        const newInputs = [...formData.publicInputs];
-                                        newInputs[index].type = e.target.value as any;
-                                        updateFormData('publicInputs', newInputs);
-                                    }}>
-                                        <option>String</option>
-                                        <option>Int</option>
-                                        <option>Bool</option>
-                                    </select>
-                                </div>
-                                <input type="text" placeholder="Description" className="block w-full rounded-md border-gray-300 shadow-sm" value={input.description}  onChange={e => {
-                                        const newInputs = [...formData.publicInputs];
-                                        newInputs[index].description = e.target.value;
-                                        updateFormData('publicInputs', newInputs);
-                                    }}/>
-                            </div>
-                            <button onClick={() => handleRemovePublicInput(input.id)} className="text-red-500 hover:text-red-700 p-2 mt-1"><TrashIcon className="w-5 h-5"/></button>
-                        </div>
-                    ))}
-                    <button onClick={handleAddPublicInput} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">+ Add Input</button>
-                </div>
-            );
-        case 4: // Add Public Outputs
-            return (
-                <div className="space-y-4">
-                    {formData.publicOutputs.map((output, index) => (
-                         <div key={output.id} className="p-3 border rounded-lg bg-gray-50 flex items-start gap-4">
-                            <div className="flex-1 space-y-2">
-                                <div className="flex gap-4">
-                                    <input type="text" placeholder="Output Name" className="block w-full rounded-md border-gray-300 shadow-sm" value={output.name} onChange={e => {
-                                        const newOutputs = [...formData.publicOutputs];
-                                        newOutputs[index].name = e.target.value;
-                                        updateFormData('publicOutputs', newOutputs);
-                                    }}/>
-                                    <select className="block w-1/3 rounded-md border-gray-300 shadow-sm" value={output.type} onChange={e => {
-                                        const newOutputs = [...formData.publicOutputs];
-                                        newOutputs[index].type = e.target.value as any;
-                                        updateFormData('publicOutputs', newOutputs);
-                                    }}>
-                                        <option>String</option>
-                                        <option>Int</option>
-                                        <option>Bool</option>
-                                    </select>
-                                </div>
-                                <input type="text" placeholder="Description" className="block w-full rounded-md border-gray-300 shadow-sm" value={output.description}  onChange={e => {
-                                        const newOutputs = [...formData.publicOutputs];
-                                        newOutputs[index].description = e.target.value;
-                                        updateFormData('publicOutputs', newOutputs);
-                                    }}/>
-                            </div>
-                            <button onClick={() => handleRemovePublicOutput(output.id)} className="text-red-500 hover:text-red-700 p-2 mt-1"><TrashIcon className="w-5 h-5"/></button>
-                        </div>
-                    ))}
-                    <button onClick={handleAddPublicOutput} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">+ Add Output</button>
-                </div>
-            );
-         case 5: // Make Connections
-             return (
-                <div className="space-y-3">
-                    {formData.connections.map((conn, index) => (
-                         <div key={conn.id} className="p-3 border rounded-lg bg-gray-50 flex items-center gap-2">
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full">
-                                <select className="rounded-md border-gray-300 w-full" value={conn.sourceType} onChange={e => { const newConn = [...formData.connections]; newConn[index].sourceType = e.target.value as any; updateFormData('connections', newConn); }}>
-                                     <option>Public Input</option>
-                                     <option>Stage Output Field</option>
-                                </select>
-                                {conn.sourceType === 'Public Input' ? (
-                                     <select className="rounded-md border-gray-300 w-full" value={conn.source} onChange={e => { const newConn = [...formData.connections]; newConn[index].source = e.target.value; updateFormData('connections', newConn); }}>
-                                         <option value="">Select Public Input...</option>
-                                         {formData.publicInputs.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-                                     </select>
-                                ) : (
-                                    <div className="flex gap-2 w-full">
-                                        <select className="rounded-md border-gray-300 w-1/2" value={conn.source} onChange={e => { const newConn = [...formData.connections]; newConn[index].source = e.target.value; updateFormData('connections', newConn); }}>
-                                            <option value="">Select Stage...</option>
-                                            {formData.stages.map(s => <option key={s.id} value={s.stageName || s.name}>{s.stageName || s.name}</option>)}
-                                        </select>
-                                         <select className="rounded-md border-gray-300 w-1/2" value={conn.sourceField} onChange={e => { const newConn = [...formData.connections]; newConn[index].sourceField = e.target.value; updateFormData('connections', newConn); }}>
-                                            <option value="">Select Field...</option>
-                                            {stageFields.map(f => <option key={f} value={f}>{f}</option>)}
-                                        </select>
-                                    </div>
-                                )}
-                                <select className="rounded-md border-gray-300 w-full" value={conn.destinationType} onChange={e => { const newConn = [...formData.connections]; newConn[index].destinationType = e.target.value as any; updateFormData('connections', newConn); }}>
-                                     <option>Stage Input Field</option>
-                                     <option>Public Output</option>
-                                     <option>Workflow Input</option>
-                                </select>
-                                 {conn.destinationType === 'Public Output' ? (
-                                      <select className="rounded-md border-gray-300 w-full" value={conn.destination} onChange={e => { const newConn = [...formData.connections]; newConn[index].destination = e.target.value; updateFormData('connections', newConn); }}>
-                                         <option value="">Select Public Output...</option>
-                                         {formData.publicOutputs.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
-                                     </select>
-                                 ) : (
-                                      <div className="flex gap-2 w-full">
-                                        <select className="rounded-md border-gray-300 w-1/2" value={conn.destination} onChange={e => { const newConn = [...formData.connections]; newConn[index].destination = e.target.value; updateFormData('connections', newConn); }}>
-                                            <option value="">Select Stage...</option>
-                                            {formData.stages.map(s => <option key={s.id} value={s.stageName || s.name}>{s.stageName || s.name}</option>)}
-                                        </select>
-                                         <select className="rounded-md border-gray-300 w-1/2" value={conn.destinationField} onChange={e => { const newConn = [...formData.connections]; newConn[index].destinationField = e.target.value; updateFormData('connections', newConn); }}>
-                                            <option value="">Select Field...</option>
-                                             {stageFields.map(f => <option key={f} value={f}>{f}</option>)}
-                                        </select>
-                                    </div>
-                                 )}
-                             </div>
-                              <button onClick={() => handleRemoveConnection(conn.id)} className="text-red-500 hover:text-red-700 p-2"><TrashIcon className="w-5 h-5"/></button>
-                         </div>
-                    ))}
-                    <button onClick={handleAddConnection} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">+ Add New Connection</button>
-                </div>
-             );
-        case 6: // Review
-            return (
-                <div className="space-y-4">
-                    <h3 className="text-md font-semibold text-gray-800">Review your workflow configuration before generating the code.</h3>
-                    <div className="bg-gray-100 p-4 rounded-md text-sm max-h-96 overflow-y-auto">
-                        <pre className="whitespace-pre-wrap font-mono">{JSON.stringify(formData, null, 2)}</pre>
-                    </div>
-                </div>
-            );
-        case 7: // Generate
-            return (
-                <div>
-                     <h3 className="text-md font-semibold text-gray-800 mb-4">Generated JCL Code</h3>
-                     <div className="bg-gray-800 text-white p-4 rounded-md font-mono text-sm max-h-96 overflow-y-auto relative">
-                        {isGenerating && !generatedCode && <div className="text-center">Generating...</div>}
-                        <pre className="whitespace-pre-wrap">{generatedCode}</pre>
-                     </div>
-                </div>
-            )
+      case 2: // Inputs & Outputs
+      case 3: // Connections
+      case 4: // Review
+        return (
+          <div>
+            <h3 className="text-xl font-semibold mb-6">{STEPS[currentStep]}</h3>
+            <div className="text-center text-gray-400 border-2 border-dashed rounded-lg p-12 mt-4">
+                <p>This feature is not yet implemented.</p>
+                <p>Click "Next" to proceed or "Create Workflow" on the final step.</p>
+            </div>
+          </div>
+        );
       default:
         return null;
     }
-  }
-
-  const sections = [
-    { number: 1, title: 'Workflow Configuration', isRequired: true },
-    { number: 2, title: 'Add Stages', isRequired: true },
-    { number: 3, title: 'Add Public Inputs', isRequired: false },
-    { number: 4, title: 'Add Public Outputs', isRequired: false },
-    { number: 5, title: 'Make Connections', isRequired: false },
-    { number: 6, title: 'Review', isRequired: false },
-    { number: 7, title: 'Generate', isRequired: false },
-  ];
-
-  const currentSection = sections.find(s => s.number === step);
-
+  };
+  
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center animate-fade-in">
-      <div className="bg-gray-50 rounded-lg shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
-        <header className="p-4 border-b flex items-center justify-between flex-shrink-0 bg-white">
-            <h2 className="text-lg font-semibold">Jarvis Workflow Onboarding</h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-2xl font-light w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-              &times;
-            </button>
-        </header>
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center animate-fade-in transition-opacity" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b">
+          <h2 className="text-2xl font-bold">Create New Workflow</h2>
+          <p className="text-gray-500 mt-1">Follow the steps to configure your new workflow using the selected assets.</p>
+        </div>
 
-        <main className="flex-1 p-6 overflow-y-auto">
-             <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-xl font-bold text-blue-600">{currentSection?.number}. {currentSection?.title}</h2>
-                <span className="text-gray-500 font-normal text-lg">{currentSection?.isRequired ? '(Required)' : '(Optional)'}</span>
-                {step > 1 && <CheckCircleIcon className="w-6 h-6 text-green-500" />}
-             </div>
-             <div className="bg-white p-6 rounded-lg border">
-                {renderStep()}
-             </div>
-        </main>
+        <div className="p-6 border-b">
+          <div className="flex items-center justify-between">
+            {STEPS.map((step, index) => (
+              <React.Fragment key={step}>
+                <div className="flex items-center">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors ${index <= currentStep ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                    {index < currentStep ? <CheckCircleIcon className="w-5 h-5"/> : index + 1}
+                  </div>
+                  <span className={`ml-3 font-medium transition-colors ${index <= currentStep ? 'text-gray-800' : 'text-gray-500'}`}>{step}</span>
+                </div>
+                {index < STEPS.length - 1 && <div className={`flex-1 h-1 mx-4 transition-colors ${index < currentStep ? 'bg-blue-600' : 'bg-gray-200'}`}></div>}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
         
-        <footer className="p-4 border-t flex items-center justify-between flex-shrink-0 bg-white">
-            <button 
-                onClick={handleBack} 
-                disabled={step === 1}
-                className="bg-gray-200 text-gray-700 font-semibold px-4 py-2 rounded-md hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed">
-              Go Back
-            </button>
-            {step < 6 && (
-                 <button onClick={handleNext} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">
-                    Go Next
-                 </button>
+        <div className="flex-1 p-8 overflow-y-auto">
+          {renderStepContent()}
+        </div>
+
+        <div className="p-6 border-t flex justify-between items-center bg-gray-50 rounded-b-lg">
+          <button onClick={onClose} className="px-4 py-2 rounded-md hover:bg-gray-100 font-medium text-gray-700">Cancel</button>
+          <div className="flex items-center gap-2">
+            {currentStep > 0 && (
+              <button onClick={handleBack} className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-md hover:bg-gray-50">
+                <ArrowLeftIcon className="w-5 h-5"/>
+                <span>Back</span>
+              </button>
             )}
-             {step === 6 && (
-                 <button onClick={handleNext} className="bg-green-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-green-700">
-                    Continue to Generation
-                 </button>
+            {currentStep < STEPS.length - 1 ? (
+              <button onClick={handleNext} className="flex items-center gap-2 bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700">
+                <span>Next</span>
+                <ArrowRightIcon className="w-5 h-5"/>
+              </button>
+            ) : (
+              <button onClick={onClose} className="flex items-center gap-2 bg-green-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-green-700">
+                <CheckCircleIcon className="w-5 h-5"/>
+                <span>Create Workflow</span>
+              </button>
             )}
-             {step === 7 && (
-                 <button onClick={handleGenerateCode} disabled={isGenerating} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-blue-300">
-                   {isGenerating ? 'Generating...' : 'Generate Code'}
-                 </button>
-            )}
-        </footer>
+          </div>
+        </div>
       </div>
     </div>
   );

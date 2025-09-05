@@ -6,6 +6,10 @@ export interface Asset {
   isNew?: boolean;
   category: string;
   owner: string;
+  tag?: 'Prod' | 'Non-prod';
+  tagColor?: 'pink' | 'cyan';
+  avatar?: string; // Could be a URL or an identifier for a character/letter
+  pinned?: boolean;
 }
 
 export interface ChatMessage {

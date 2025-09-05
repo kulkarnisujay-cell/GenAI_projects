@@ -13,13 +13,13 @@ const CreateWorkflowBanner: React.FC<{ count: number; onOpen: () => void }> = ({
 
   return (
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-auto animate-fade-in-up z-10">
-      <div className="bg-blue-600 text-white rounded-lg shadow-2xl flex items-center justify-between py-3 px-5 gap-6">
+      <div className="bg-blue-500 text-white rounded-lg shadow-2xl flex items-center justify-between py-3 px-5 gap-6">
         <span className="font-medium">{count} asset{count > 1 ? 's' : ''} selected</span>
         <button 
           onClick={onOpen}
           className="bg-white text-blue-600 font-semibold px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center gap-2"
         >
-          <span>Create Workflow with Agent</span>
+          <span>Create Workflow</span>
           <ArrowRightIcon className="h-5 w-5" />
         </button>
       </div>
@@ -69,19 +69,17 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen text-gray-800 antialiased">
+    <div className="flex h-screen w-screen bg-white text-slate-800 antialiased">
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Header />
-        <main className="relative flex flex-1 overflow-hidden">
+        <main className="relative flex flex-1 overflow-hidden bg-gray-50">
           <AssetHub 
             selectedAssets={selectedAssets}
             onAssetSelect={handleAssetSelect}
             highlightedAssetId={highlightedAssetId}
           />
           <AgentPanel
-            selectedAssets={selectedAssets}
-            onClearSelection={handleClearSelection}
             onAgentAction={handleAgentAction}
           />
            <CreateWorkflowBanner count={selectedAssets.length} onOpen={handleOpenWizard} />
