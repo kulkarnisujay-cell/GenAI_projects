@@ -1,7 +1,6 @@
 import { GoogleGenAI, Chat } from "@google/genai";
 
 let ai: GoogleGenAI | null = null;
-let chat: Chat | null = null;
 
 const getAI = () => {
   if (!ai) {
@@ -15,7 +14,7 @@ const getAI = () => {
 
 export const startChat = (systemInstruction: string): Chat => {
   const aiInstance = getAI();
-  chat = aiInstance.chats.create({
+  const chat = aiInstance.chats.create({
     model: 'gemini-2.5-flash',
     config: {
       systemInstruction,
@@ -24,9 +23,9 @@ export const startChat = (systemInstruction: string): Chat => {
   return chat;
 };
 
-export const sendMessageStream = async (message: string) => {
+export const sendMessageStream = async (chat: Chat, message: string) => {
   if (!chat) {
-    throw new Error("Chat not initialized. Call startChat first.");
+    throw new Error("Chat instance not provided.");
   }
   return chat.sendMessageStream({ message });
 };

@@ -7,9 +7,10 @@ interface AssetCardProps {
   asset: Asset;
   isSelected: boolean;
   onSelect: (asset: Asset, isSelected: boolean) => void;
+  isHighlighted: boolean;
 }
 
-const AssetCard: React.FC<AssetCardProps> = ({ asset, isSelected, onSelect }) => {
+const AssetCard: React.FC<AssetCardProps> = ({ asset, isSelected, onSelect, isHighlighted }) => {
   const handleSelect = () => {
     onSelect(asset, !isSelected);
   };
@@ -19,7 +20,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, isSelected, onSelect }) =>
       onClick={handleSelect}
       className={`group cursor-pointer rounded-lg border bg-white p-5 transition-all hover:shadow-lg ${
         isSelected ? 'border-blue-500 ring-2 ring-blue-500' : 'border-gray-200 hover:border-blue-400'
-      }`}
+      } ${isHighlighted ? 'animate-pulse-bg ring-2 ring-green-500' : ''}`}
     >
       <div className="flex items-start justify-between">
         <div>

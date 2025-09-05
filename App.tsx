@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Asset } from './types';
+import { Asset, AgentAction } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import AssetHub from './components/AssetHub';
 import WorkflowWizardModal from './components/WorkflowWizardModal';
 import AgentPanel from './components/AgentPanel';
 import { ArrowRightIcon } from './components/icons/ArrowRightIcon';
+import { mockAssets } from './data/assets';
 
 const CreateWorkflowBanner: React.FC<{ count: number; onOpen: () => void }> = ({ count, onOpen }) => {
   if (count === 0) return null;
@@ -30,8 +31,10 @@ const CreateWorkflowBanner: React.FC<{ count: number; onOpen: () => void }> = ({
 const App: React.FC = () => {
   const [selectedAssets, setSelectedAssets] = useState<Asset[]>([]);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null);
 
   const handleAssetSelect = (asset: Asset, isSelected: boolean) => {
+    setHighlightedAssetId(null); // Clear highlight on any selection change
     if (isSelected) {
       setSelectedAssets(prev => [...prev, asset]);
     } else {
@@ -42,6 +45,17 @@ const App: React.FC = () => {
   const handleClearSelection = () => {
     setSelectedAssets([]);
   };
+  
+  const handleAgentAction = (action: AgentAction) => {
+    if (action.type === 'highlight_asset') {
+      const assetToHighlight = mockAssets.find(a => a.name === action.assetName);
+      if (assetToHighlight) {
+        setHighlightedAssetId(assetToHighlight.id);
+        // Clear the highlight after a few seconds to avoid it being permanent
+        setTimeout(() => setHighlightedAssetId(null), 4000);
+      }
+    }
+  };
 
   const handleOpenWizard = () => {
     if (selectedAssets.length > 0) {
@@ -49,13 +63,9 @@ const App: React.FC = () => {
     }
   };
 
-  const handleBackToHub = () => {
+  const handleCloseWizard = () => {
     setIsWizardOpen(false);
-  };
-
-  const handleCancelWizard = () => {
-    setIsWizardOpen(false);
-    handleClearSelection(); 
+    // Do not clear selection on close, user might want to re-open
   };
 
   return (
@@ -67,10 +77,12 @@ const App: React.FC = () => {
           <AssetHub 
             selectedAssets={selectedAssets}
             onAssetSelect={handleAssetSelect}
+            highlightedAssetId={highlightedAssetId}
           />
           <AgentPanel
             selectedAssets={selectedAssets}
             onClearSelection={handleClearSelection}
+            onAgentAction={handleAgentAction}
           />
            <CreateWorkflowBanner count={selectedAssets.length} onOpen={handleOpenWizard} />
         </main>
@@ -78,8 +90,7 @@ const App: React.FC = () => {
       {isWizardOpen && (
         <WorkflowWizardModal
           isOpen={isWizardOpen}
-          onClose={handleCancelWizard}
-          onBack={handleBackToHub}
+          onClose={handleCloseWizard}
           selectedAssets={selectedAssets}
         />
       )}

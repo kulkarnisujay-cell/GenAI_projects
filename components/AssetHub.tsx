@@ -1,29 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Asset } from '../types';
 import AssetCard from './AssetCard';
 import { SearchIcon } from './icons/SearchIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { GridIcon } from './icons/GridIcon';
 import { TableIcon } from './icons/TableIcon';
-
-const mockAssets: Asset[] = [
-  { id: '1', name: 'CODEMAKER', description: 'Generates code based on specifications. Highly reusable for various build processes.', type: 'stage', isNew: true, category: 'Build', owner: 'jarvis-team' },
-  { id: '2', name: 'SUBMIT_CHANGELIST', description: 'Submits a changelist to version control. Essential for CI/CD pipelines.', type: 'stage', isNew: true, category: 'CI/CD', owner: 'jarvis-team' },
-  { id: '3', name: 'UPDATE_DESCRIPTION', description: 'Updates the description of a CL or a Buganizer issue.', type: 'stage', category: 'Tooling', owner: 'developer-tools' },
-  { id: '4', name: 'SYNC_GREEN_CL', description: 'Syncs a "green" (passing tests) changelist to the main branch.', type: 'workflow', category: 'CI/CD', owner: 'jarvis-team' },
-  { id: '5', name: 'CREATE_BUGANIZER_ISSUE', description: 'Creates a new issue in Buganizer from workflow context.', type: 'stage', category: 'Tooling', owner: 'developer-tools' },
-  { id: '6', name: 'STANDARD_RELEASE_PIPELINE', description: 'A complete workflow for a standard service release process.', type: 'workflow', category: 'Release', owner: 'sre-team' },
-  { id: '7', name: 'RUN_UNIT_TESTS', description: 'Executes unit tests for a specified target.', type: 'stage', category: 'Testing', owner: 'testing-infra' },
-  { id: '8', name: 'DEPLOY_TO_STAGING', description: 'Deploys a build to the staging environment.', type: 'stage', category: 'Release', owner: 'sre-team' },
-];
+import { mockAssets } from '../data/assets';
 
 interface AssetHubProps {
   selectedAssets: Asset[];
   onAssetSelect: (asset: Asset, isSelected: boolean) => void;
+  highlightedAssetId: string | null;
 }
 
-const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect }) => {
+const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect, highlightedAssetId }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const assetRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (highlightedAssetId) {
+        const ref = assetRefs.current[highlightedAssetId];
+        ref?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightedAssetId]);
 
   const filteredAssets = mockAssets.filter(asset =>
     asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -66,12 +65,15 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect }) =>
           <h3 className="text-lg font-semibold">Recently updated</h3>
           <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
             {recentlyUpdatedAssets.map(asset => (
-              <AssetCard
-                key={asset.id}
-                asset={asset}
-                isSelected={selectedAssets.some(a => a.id === asset.id)}
-                onSelect={onAssetSelect}
-              />
+              // FIX: The ref callback should not return a value. Using a block with {} fixes the implicit return.
+              <div key={asset.id} ref={el => { assetRefs.current[asset.id] = el; }}>
+                <AssetCard
+                  asset={asset}
+                  isSelected={selectedAssets.some(a => a.id === asset.id)}
+                  onSelect={onAssetSelect}
+                  isHighlighted={asset.id === highlightedAssetId}
+                />
+              </div>
             ))}
           </div>
         </div>
@@ -79,12 +81,15 @@ const AssetHub: React.FC<AssetHubProps> = ({ selectedAssets, onAssetSelect }) =>
           <h3 className="text-lg font-semibold">Most popular</h3>
            <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
             {mostPopularAssets.map(asset => (
-              <AssetCard
-                key={asset.id}
-                asset={asset}
-                isSelected={selectedAssets.some(a => a.id === asset.id)}
-                onSelect={onAssetSelect}
-              />
+               // FIX: The ref callback should not return a value. Using a block with {} fixes the implicit return.
+               <div key={asset.id} ref={el => { assetRefs.current[asset.id] = el; }}>
+                <AssetCard
+                  asset={asset}
+                  isSelected={selectedAssets.some(a => a.id === asset.id)}
+                  onSelect={onAssetSelect}
+                  isHighlighted={asset.id === highlightedAssetId}
+                />
+              </div>
             ))}
           </div>
         </div>

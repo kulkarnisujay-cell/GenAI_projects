@@ -1,156 +1,166 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Asset, ChatMessage } from '../types';
-import { sendMessageStream, startChat } from '../services/geminiService';
-import { PlusIcon } from './icons/PlusIcon';
+import React, { useState, useEffect, useRef } from 'react';
+import { Asset, ChatMessage, AgentAction } from '../types';
+import { startChat, sendMessageStream } from '../services/geminiService';
+import { Chat } from '@google/genai';
 import { SendIcon } from './icons/SendIcon';
-
-const GENERAL_ASSISTANT_PROMPT = `You are a helpful AI assistant for the Flower Asset Hub, a marketplace for discovering and reusing software development stages and workflows. Your role is to help developers find relevant assets and understand how to use them. You can answer questions like "find me stages for CI/CD" or "what are the inputs for the SUBMIT_CHANGELIST stage?". You have knowledge about these assets: CODEMAKER, SUBMIT_CHANGELIST, UPDATE_DESCRIPTION, SYNC_GREEN_CL, CREATE_BUGANIZER_ISSUE, STANDARD_RELEASE_PIPELINE, RUN_UNIT_TESTS, DEPLOY_TO_STAGING. Respond conversationally based on the user's query.`;
+import { PlusIcon } from './icons/PlusIcon';
+import { mockAssets } from '../data/assets';
 
 interface AgentPanelProps {
   selectedAssets: Asset[];
   onClearSelection: () => void;
+  onAgentAction: (action: AgentAction) => void;
 }
 
-const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelection }) => {
+const AgentPanel: React.FC<AgentPanelProps> = ({ selectedAssets, onClearSelection, onAgentAction }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [input, setInput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [chat, setChat] = useState<Chat | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  
-  const hasStartedChat = useRef(false);
+
+  useEffect(() => {
+    const assetList = mockAssets.map(a => `'${a.name}'`).join(', ');
+    const systemInstruction = `You are an expert workflow assistant for the "Flower Asset Hub". The user can see a list of assets.
+Available assets: ${assetList}.
+
+When a user asks you to find or show them a specific asset from the list, you MUST respond with a single, valid JSON object and nothing else. This object must have a 'response' key with your text for the user, and an 'action' key to highlight the asset in the UI.
+
+Example User Query: "show me the create buganizer issue stage"
+Example JSON Response:
+{
+  "response": "Of course. The 'CREATE_BUGANIZER_ISSUE' stage is used for creating new issues. I've highlighted it for you on the left.",
+  "action": { "type": "highlight_asset", "assetName": "CREATE_BUGANIZER_ISSUE" }
+}
+
+For any other conversational questions, just respond with plain text.`;
+    
+    const newChat = startChat(systemInstruction);
+    setChat(newChat);
+    setMessages([
+      { id: '1', sender: 'agent', text: 'Hello! How can I help you? Ask me to find a stage or workflow.' }
+    ]);
+  }, []);
 
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
-  
-  const initChat = useCallback(() => {
-    startChat(GENERAL_ASSISTANT_PROMPT);
-    const initialAgentMessage: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'agent',
-      text: 'Hello, Jane! How can I help you today? Ask me to find a stage, or select assets to create a workflow.',
-    };
-    setMessages([initialAgentMessage]);
-    hasStartedChat.current = true;
-  }, []);
 
-  useEffect(() => {
-    if (!hasStartedChat.current) {
-        initChat();
-    }
-  }, [initChat]);
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isGenerating || !chat) return;
 
-  const handleSendMessage = async () => {
-    if (!userInput.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: userInput,
-    };
+    const userMessage: ChatMessage = { id: Date.now().toString(), sender: 'user', text: input };
     setMessages(prev => [...prev, userMessage]);
-    setUserInput('');
-    setIsLoading(true);
+    const currentInput = input;
+    setInput('');
+    setIsGenerating(true);
 
-    const agentResponseId = (Date.now() + 1).toString();
-    const agentTypingMessage: ChatMessage = {
-        id: agentResponseId,
-        sender: 'agent',
-        text: '',
-        isGenerating: true,
-    };
-    setMessages(prev => [...prev, agentTypingMessage]);
+    const agentMessageId = (Date.now() + 1).toString();
+    setMessages(prev => [...prev, { id: agentMessageId, sender: 'agent', text: '', isGenerating: true }]);
 
     try {
-      let prompt = userInput;
-      if (selectedAssets.length > 0) {
-        const assetNames = selectedAssets.map(a => a.name).join(', ');
-        prompt = `The user has these assets selected: ${assetNames}. \n\nUser's question: ${userInput}`;
-      }
-      const stream = await sendMessageStream(prompt);
-      let fullText = '';
+      const stream = await sendMessageStream(chat, currentInput);
+      let agentResponse = '';
       for await (const chunk of stream) {
-        const chunkText = chunk.text;
-        fullText += chunkText;
-        setMessages(prev => prev.map(msg => 
-            msg.id === agentResponseId ? { ...msg, text: fullText, isGenerating: true } : msg
-        ));
+        agentResponse += chunk.text;
       }
-      setMessages(prev => prev.map(msg => 
-          msg.id === agentResponseId ? { ...msg, text: fullText, isGenerating: false } : msg
-      ));
 
-    } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage: ChatMessage = {
-        id: agentResponseId,
-        sender: 'agent',
-        text: 'Sorry, I encountered an error. Please try again.',
-      };
-      setMessages(prev => prev.map(msg => msg.id === agentResponseId ? errorMessage : msg));
+      let displayText = agentResponse;
+      try {
+        const cleanedResponse = agentResponse.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleanedResponse);
+        if (parsed.response && parsed.action) {
+          displayText = parsed.response;
+          if (parsed.action.type === 'highlight_asset' && parsed.action.assetName) {
+            onAgentAction(parsed.action);
+          }
+        }
+      } catch (e) {
+        // Not a JSON response, treat as plain text.
+      }
+
+      setMessages(prev => prev.map(msg => 
+        msg.id === agentMessageId ? { ...msg, text: displayText, isGenerating: false } : msg
+      ));
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      setMessages(prev => prev.map(msg => 
+        msg.id === agentMessageId ? { ...msg, text: "Sorry, I encountered an error.", isGenerating: false } : msg
+      ));
     } finally {
-      setIsLoading(false);
-      // Do not clear selection on every message anymore
-      // onClearSelection(); 
+      setIsGenerating(false);
     }
   };
   
-  return (
-    <aside className="w-full max-w-sm flex-shrink-0 border-l bg-white flex flex-col">
-      <div className="flex h-16 items-center justify-between border-b px-4">
-        <h3 className="font-semibold">AI agent</h3>
-      </div>
+  const Spinner = () => <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>;
 
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`rounded-lg px-4 py-2 max-w-xs ${msg.sender === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
-              {msg.isGenerating && msg.text === '' && <div className="h-5 w-2.5 bg-gray-400 animate-pulse rounded-sm"></div>}
-              {msg.text.split('```cpp').map((part, index) => {
-                 if (index === 0) return <p key={index} className="whitespace-pre-wrap">{part}</p>;
-                 const codeBlock = part.split('```')[0];
-                 const restOfText = part.split('```')[1];
-                 return (
-                    <div key={index}>
-                      <div className="bg-gray-800 text-white rounded-md p-3 my-2 text-sm overflow-x-auto">
-                        <pre><code>{codeBlock}</code></pre>
-                      </div>
-                      <p className="whitespace-pre-wrap">{restOfText}</p>
-                    </div>
-                 )
-              })}
-              {msg.isGenerating && <div className="h-3 w-3 bg-blue-200 animate-pulse rounded-full mt-1.5 ml-1 inline-block"></div>}
+  return (
+    <aside className="w-96 flex flex-col border-l bg-white">
+      <div className="flex-shrink-0 p-4 border-b">
+        <h3 className="text-lg font-semibold">Workflow Agent</h3>
+      </div>
+      
+      {selectedAssets.length > 0 && (
+        <div className="p-4 border-b">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-semibold text-sm">Selected Assets ({selectedAssets.length})</h4>
+            <button onClick={onClearSelection} className="text-blue-600 hover:underline text-sm font-medium">Clear</button>
+          </div>
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {selectedAssets.map(asset => (
+              <div key={asset.id} className="bg-gray-100 p-2 rounded-md text-sm">
+                <p className="font-medium text-gray-800">{asset.name}</p>
+                <p className="text-gray-500 truncate">{asset.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4">
+        {messages.map((message) => (
+          <div key={message.id} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`rounded-lg px-4 py-2 max-w-xs lg:max-w-md ${message.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-800'}`}>
+              {message.text}
+              {message.isGenerating && !message.text && (
+                 <div className="flex items-center justify-center p-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s] mx-1"></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                  </div>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="border-t p-4">
-        <div className="relative">
+      <div className="border-t p-4 flex-shrink-0">
+        <form onSubmit={handleSendMessage} className="relative">
           <textarea
-            value={userInput}
-            onChange={e => setUserInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-            placeholder="Enter a prompt here"
-            className="w-full resize-none rounded-md border border-gray-300 p-2 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={1}
-            disabled={isLoading}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
+            placeholder="Find a stage for me..."
+            className="w-full resize-none rounded-lg border border-gray-300 py-3 pl-4 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isGenerating}
           />
-          <div className="absolute bottom-2 right-2 flex items-center">
-            <button className="p-1 text-gray-400 hover:text-gray-600">
-              <PlusIcon className="h-5 w-5" />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            <button type="button" className="text-gray-400 hover:text-blue-600">
+              <PlusIcon className="h-5 w-5"/>
             </button>
-            <button
-              onClick={handleSendMessage}
-              disabled={isLoading || !userInput.trim()}
-              className="ml-2 rounded-md bg-blue-500 p-1.5 text-white hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            <button 
+              type="submit" 
+              className="bg-blue-600 text-white rounded-md h-8 w-8 flex items-center justify-center hover:bg-blue-700 disabled:bg-blue-300"
+              disabled={!input.trim() || isGenerating}
             >
-              <SendIcon className="h-4 w-4" />
+              {isGenerating ? <Spinner/> : <SendIcon className="h-4 w-4" />}
             </button>
           </div>
-        </div>
+        </form>
       </div>
     </aside>
   );
